@@ -2,21 +2,22 @@ import cv2
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-
 from skimage.feature import hog
 from sklearn.svm import LinearSVC
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
 
+
+
 train_sample = train_df.groupby("Target", group_keys=False).apply(
-    lambda x: x.sample(min(len(x), 1500), random_state=42)
-)
+    lambda x: x.sample(min(len(x), 1500), random_state=42))
 
 val_sample = val_df.groupby("Target", group_keys=False).apply(
-    lambda x: x.sample(min(len(x), 500), random_state=42)
-)
+    lambda x: x.sample(min(len(x), 500), random_state=42))
 
-print(train_sample["Target"].value_counts())
-print(val_sample["Target"].value_counts())
+
+#print(train_sample["Target"].value_counts())
+#print(val_sample["Target"].value_counts())
+
 
 def extract_hog_features(dataframe):
     features = []
@@ -48,16 +49,16 @@ def extract_hog_features(dataframe):
 X_train_hog, y_train_hog = extract_hog_features(train_sample)
 X_val_hog, y_val_hog = extract_hog_features(val_sample)
 
-print(X_train_hog.shape)
-print(y_train_hog.shape)
-print(X_val_hog.shape)
-print(y_val_hog.shape)
+#print(X_train_hog.shape)
+#print(y_train_hog.shape)
+#print(X_val_hog.shape)
+#print(y_val_hog.shape)
 
 svm_model = LinearSVC(
     class_weight="balanced",
     max_iter=5000,
-    random_state=42
-)
+    random_state=42)
+
 
 svm_model.fit(X_train_hog, y_train_hog)
 

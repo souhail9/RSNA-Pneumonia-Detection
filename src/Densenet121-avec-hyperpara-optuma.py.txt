@@ -1,4 +1,5 @@
 from torchvision import models
+import torch.optim as optim
 import torch.nn as nn
 from sklearn.metrics import (
     accuracy_score,
@@ -22,14 +23,11 @@ num_epochs = 20
 criterion = nn.BCEWithLogitsLoss(
     pos_weight=torch.tensor(
         [positive_class_weight],
-        device=device
-    )
-)
+        device=device))
 
 
 densenet_optuna = models.densenet121(
-    weights=models.DenseNet121_Weights.IMAGENET1K_V1
-)
+    weights=models.DenseNet121_Weights.IMAGENET1K_V1)
 
 # Geler toutes les couches
 for param in densenet_optuna.parameters():
@@ -49,23 +47,19 @@ densenet_optuna.classifier = nn.Sequential(
     nn.Linear(num_features, dense_units),
     nn.ReLU(),
     nn.Dropout(dropout_rate),
-    nn.Linear(dense_units, 1)
-)
+    nn.Linear(dense_units, 1))
 
 densenet_optuna = densenet_optuna.to(device)
 
-import torch.optim as optim
 
 optimizer = optim.AdamW(
     filter(lambda p: p.requires_grad, densenet_optuna.parameters()),
     lr=learning_rate,
-    weight_decay=weight_decay
-)
+    weight_decay=weight_decay)
 
 early_stopping = EarlyStopping(
     patience=5,
-    min_delta=0.001
-)
+    min_delta=0.001)
 
 
 best_val_loss = float("inf")
@@ -122,8 +116,7 @@ for epoch in range(num_epochs):
     print(
         f"Epoch {epoch+1}/{num_epochs} "
         f"Train Loss={train_loss:.4f} "
-        f"Val Loss={val_loss:.4f}"
-    )
+        f"Val Loss={val_loss:.4f}"    )
 
     if val_loss < best_val_loss:
 
@@ -131,8 +124,7 @@ for epoch in range(num_epochs):
 
         torch.save(
             densenet_optuna.state_dict(),
-            "/kaggle/working/best_densenet121_optunaV3.pth"
-        )
+            "/kaggle/working/best_densenet121_optunaV3.pth"        )
 
         print("Best model saved.")
 

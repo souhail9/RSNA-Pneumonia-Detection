@@ -16,9 +16,8 @@ from sklearn.metrics import (
 
  
 
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# print(device)
+
 
 learning_rate = 1e-4
 num_epochs = 20
@@ -27,8 +26,7 @@ dropout_rate = 0.3
 
 
 densenet = models.densenet121(
-    weights=models.DenseNet121_Weights.IMAGENET1K_V1
-)
+    weights=models.DenseNet121_Weights.IMAGENET1K_V1)
 
 for param in densenet.parameters():
     param.requires_grad = False
@@ -39,10 +37,9 @@ densenet.classifier = nn.Sequential(
     nn.Linear(num_features, 512),
     nn.ReLU(),
     nn.Dropout(dropout_rate),
-    nn.Linear(512, 2)
-)
+    nn.Linear(512, 2))
 
-# Fine tuning
+
 for param in densenet.features.denseblock4.parameters():
     param.requires_grad = True
 
@@ -51,13 +48,11 @@ for param in densenet.features.norm5.parameters():
 
 densenet = densenet.to(device)
 
-#print(densenet.classifier)
 
 class_weights = compute_class_weight(
     class_weight="balanced",
     classes=np.unique(train_df["Target"]),
-    y=train_df["Target"]
-)
+    y=train_df["Target"])
 
 class_weights = torch.tensor(
     class_weights,
@@ -65,15 +60,13 @@ class_weights = torch.tensor(
 ).to(device)
 
 criterion = nn.CrossEntropyLoss(
-    weight=class_weights
-)
+    weight=class_weights)
 
 optimizer = optim.Adam(
     filter(lambda p: p.requires_grad,
            densenet.parameters()),
     lr=learning_rate,
-    weight_decay=weight_decay
-)
+    weight_decay=weight_decay)
 
 
 class EarlyStopping:
@@ -108,12 +101,16 @@ class EarlyStopping:
 
 early_stopping = EarlyStopping(
     patience=5,
-    min_delta=0.001
-)
+    min_delta=0.001)
+
 
 
 
 ###### Entraînement et sauvegarde du modèle final #####
+
+
+
+
 best_val_loss = float("inf")
 
 train_losses_densenet = []

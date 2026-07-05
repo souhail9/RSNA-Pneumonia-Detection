@@ -1,13 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
 from torchvision import models
 from sklearn.utils.class_weight import compute_class_weight
 import numpy as np
 
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#print(device)
 
 learning_rate = 1e-4
 batch_size = 32
@@ -17,8 +16,8 @@ dropout_rate = 0.3
 
 
 model = models.resnet50(
-    weights=models.ResNet50_Weights.IMAGENET1K_V2
-)
+    weights=models.ResNet50_Weights.IMAGENET1K_V2)
+
 
 for param in model.parameters():
     param.requires_grad = False
@@ -27,18 +26,15 @@ model.fc = nn.Sequential(
     nn.Linear(2048, 512),
     nn.ReLU(),
     nn.Dropout(dropout_rate),
-    nn.Linear(512, 2)
-)
+    nn.Linear(512, 2))
 
 model = model.to(device)
 
-# print(model.fc)
 
 class_weights = compute_class_weight(
     class_weight='balanced',
     classes=np.unique(train_df["Target"]),
-    y=train_df["Target"]
-)
+    y=train_df["Target"])
 
 class_weights = torch.tensor(
     class_weights,
@@ -48,14 +44,12 @@ class_weights = torch.tensor(
 print(class_weights)
 
 criterion = nn.CrossEntropyLoss(
-    weight=class_weights
-)
+    weight=class_weights)
 
 optimizer = optim.Adam(
     model.fc.parameters(),
     lr=learning_rate,
-    weight_decay=weight_decay
-)
+    weight_decay=weight_decay)
 
 class EarlyStopping:
 
@@ -118,9 +112,6 @@ for epoch in range(num_epochs):
 
     train_loss = running_loss / len(train_loader)
 
-    # =====================
-    # Validation
-    # =====================
     model.eval()
     running_val_loss = 0.0
 
@@ -138,9 +129,8 @@ for epoch in range(num_epochs):
 
     val_loss = running_val_loss / len(val_loader)
 
-    # =====================
     # Sauvegarde meilleur modèle
-    # =====================
+
     if val_loss < best_val_loss:
 
         best_val_loss = val_loss
@@ -152,9 +142,7 @@ for epoch in range(num_epochs):
 
         print("Best model saved")
 
-    # =====================
-    # Historique des pertes
-    # =====================
+ 
     train_losses.append(train_loss)
     val_losses.append(val_loss)
 
@@ -164,9 +152,6 @@ for epoch in range(num_epochs):
         f"Val Loss: {val_loss:.4f}"
     )
 
-    # =====================
-    # Early stopping
-    # =====================
     early_stopping(val_loss)
 
     if early_stopping.early_stop:
@@ -175,10 +160,13 @@ for epoch in range(num_epochs):
         break
 
 
+
 #### évaluation du model ####
+
+
+
 model.load_state_dict(
-    torch.load("/kaggle/working/best_resnet50.pth")
-)
+    torch.load("/kaggle/working/best_resnet50.pth"))
 
 model.eval()
 
@@ -187,8 +175,7 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
     f1_score,
-    confusion_matrix
-)
+    confusion_matrix)
 
 all_preds = []
 all_labels = []

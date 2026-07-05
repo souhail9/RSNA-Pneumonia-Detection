@@ -2,6 +2,8 @@
 
 #### chargement des paramétres du model U-net pour la segmentation ####
 
+
+
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Conv2DTranspose, concatenate
 from tensorflow.keras.models import Model
 
@@ -75,11 +77,18 @@ import torch.optim as optim
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    confusion_matrix,
+    roc_auc_score)
+from tqdm import tqdm
 
 def read_dicom_image_segmented(path, image_size=224):
     image = read_dicom_gray(path)
 
-    # CLAHE avant segmentation
     image_clahe = apply_clahe_gray(image)
 
     # Segmentation U-Net
@@ -87,10 +96,8 @@ def read_dicom_image_segmented(path, image_size=224):
         image_clahe,
         unet_model,
         input_size=256,
-        threshold=0.5
-    )
+        threshold=0.5)
 
-    # Resize + RGB
     segmented = cv2.resize(segmented, (image_size, image_size))
     segmented = cv2.cvtColor(segmented, cv2.COLOR_GRAY2RGB)
 
@@ -130,43 +137,37 @@ class RSNASegmentedDataset(Dataset):
 
 train_seg_dataset = RSNASegmentedDataset(
     train_df,
-    augmentation=train_augmentation
-)
+    augmentation=train_augmentation)
+
 
 val_seg_dataset = RSNASegmentedDataset(
     val_df,
-    augmentation=None
-)
+    augmentation=None)
 
 test_seg_dataset = RSNASegmentedDataset(
     test_df,
-    augmentation=None
-)
+    augmentation=None)
 
 train_seg_loader = DataLoader(
     train_seg_dataset,
     batch_size=32,
     shuffle=True,
-    num_workers=0
-)
+    num_workers=0)
 
 val_seg_loader = DataLoader(
     val_seg_dataset,
     batch_size=32,
     shuffle=False,
-    num_workers=0
-)
+    num_workers=0)
 
 test_seg_loader = DataLoader(
     test_seg_dataset,
     batch_size=32,
     shuffle=False,
-    num_workers=0
-)
-
+    num_workers=0)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#print(device)
+
 
 learning_rate = 1e-4
 num_epochs = 20
@@ -174,8 +175,7 @@ weight_decay = 1e-4
 dropout_rate = 0.3
 
 densenet_seg = models.densenet121(
-    weights=models.DenseNet121_Weights.IMAGENET1K_V1
-)
+    weights=models.DenseNet121_Weights.IMAGENET1K_V1)
 
 for param in densenet_seg.parameters():
     param.requires_grad = False
@@ -186,8 +186,7 @@ densenet_seg.classifier = nn.Sequential(
     nn.Linear(num_features, 512),
     nn.ReLU(),
     nn.Dropout(dropout_rate),
-    nn.Linear(512, 2)
-)
+    nn.Linear(512, 2))
 
 for param in densenet_seg.features.denseblock4.parameters():
     param.requires_grad = True
@@ -197,30 +196,25 @@ for param in densenet_seg.features.norm5.parameters():
 
 densenet_seg = densenet_seg.to(device)
 
-#print(densenet_seg.classifier)
 
 
 
 class_weights = compute_class_weight(
     class_weight="balanced",
     classes=np.unique(train_df["Target"]),
-    y=train_df["Target"]
-)
+    y=train_df["Target"])
 
 class_weights = torch.tensor(
     class_weights,
     dtype=torch.float
 ).to(device)
 
-#print(class_weights)
-
 criterion = nn.CrossEntropyLoss(weight=class_weights)
 
 optimizer = optim.Adam(
     filter(lambda p: p.requires_grad, densenet_seg.parameters()),
     lr=learning_rate,
-    weight_decay=weight_decay
-)
+    weight_decay=weight_decay)
 
 class EarlyStopping:
 
@@ -249,8 +243,7 @@ class EarlyStopping:
 
 early_stopping = EarlyStopping(
     patience=3,
-    min_delta=0.001
-)
+    min_delta=0.001)
 
 
 
@@ -258,8 +251,6 @@ early_stopping = EarlyStopping(
 ###### Entraînement et sauvegarde du modèle final #####
 
 
-
-from tqdm import tqdm
 
 best_val_loss = float("inf")
 
@@ -311,8 +302,7 @@ for epoch in range(num_epochs):
 
         torch.save(
             densenet_seg.state_dict(),
-            "/kaggle/working/best_densenet121_segmented.pth"
-        )
+            "/kaggle/working/best_densenet121_segmented.pth" )
 
         print("Best DenseNet121 segmented model saved")
 
@@ -322,8 +312,7 @@ for epoch in range(num_epochs):
     print(
         f"Epoch {epoch+1}/{num_epochs} "
         f"Train Loss: {train_loss:.4f} "
-        f"Val Loss: {val_loss:.4f}"
-    )
+        f"Val Loss: {val_loss:.4f}")
 
     early_stopping(val_loss)
 
@@ -339,14 +328,6 @@ for epoch in range(num_epochs):
 
 
 
-from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    confusion_matrix,
-    roc_auc_score
-)
 
 import torch
 import numpy as np
@@ -356,8 +337,7 @@ all_preds = []
 all_probs = []
 
 densenet_seg.load_state_dict(
-    torch.load("/kaggle/working/best_densenet121_segmented.pth", map_location=device)
-)
+    torch.load("/kaggle/working/best_densenet121_segmented.pth", map_location=device))
 
 densenet_seg.eval()
 
