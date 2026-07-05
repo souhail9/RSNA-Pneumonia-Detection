@@ -6,8 +6,6 @@ Deep Learning framework for automatic pneumonia detection from chest X-ray image
 
 ## 📌 Project Overview
 
-Pneumonia is one of the leading causes of mortality worldwide. Early diagnosis from chest X-ray images is essential for improving patient outcomes.
-
 This project proposes several computer vision and deep learning approaches for binary pneumonia classification and compares their performance on the RSNA Pneumonia Detection Challenge dataset.
 
 The following approaches are evaluated:
