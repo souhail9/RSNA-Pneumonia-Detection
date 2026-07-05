@@ -1,0 +1,395 @@
+
+
+#### chargement des paramétres du model U-net pour la segmentation ####
+
+from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Conv2DTranspose, concatenate
+from tensorflow.keras.models import Model
+
+def build_unet(input_size=(256, 256, 1)):
+    inputs = Input(input_size)
+
+    c1 = Conv2D(32, 3, activation='relu', padding='same')(inputs)
+    c1 = Conv2D(32, 3, activation='relu', padding='same')(c1)
+    p1 = MaxPooling2D((2, 2))(c1)
+
+    c2 = Conv2D(64, 3, activation='relu', padding='same')(p1)
+    c2 = Conv2D(64, 3, activation='relu', padding='same')(c2)
+    p2 = MaxPooling2D((2, 2))(c2)
+
+    c3 = Conv2D(128, 3, activation='relu', padding='same')(p2)
+    c3 = Conv2D(128, 3, activation='relu', padding='same')(c3)
+    p3 = MaxPooling2D((2, 2))(c3)
+
+    c4 = Conv2D(256, 3, activation='relu', padding='same')(p3)
+    c4 = Conv2D(256, 3, activation='relu', padding='same')(c4)
+    p4 = MaxPooling2D((2, 2))(c4)
+
+    c5 = Conv2D(512, 3, activation='relu', padding='same')(p4)
+    c5 = Conv2D(512, 3, activation='relu', padding='same')(c5)
+
+    u6 = Conv2DTranspose(256, (2, 2), strides=(2, 2), padding='same')(c5)
+    u6 = concatenate([u6, c4])
+    c6 = Conv2D(256, 3, activation='relu', padding='same')(u6)
+    c6 = Conv2D(256, 3, activation='relu', padding='same')(c6)
+
+    u7 = Conv2DTranspose(128, (2, 2), strides=(2, 2), padding='same')(c6)
+    u7 = concatenate([u7, c3])
+    c7 = Conv2D(128, 3, activation='relu', padding='same')(u7)
+    c7 = Conv2D(128, 3, activation='relu', padding='same')(c7)
+
+    u8 = Conv2DTranspose(64, (2, 2), strides=(2, 2), padding='same')(c7)
+    u8 = concatenate([u8, c2])
+    c8 = Conv2D(64, 3, activation='relu', padding='same')(u8)
+    c8 = Conv2D(64, 3, activation='relu', padding='same')(c8)
+
+    u9 = Conv2DTranspose(32, (2, 2), strides=(2, 2), padding='same')(c8)
+    u9 = concatenate([u9, c1])
+    c9 = Conv2D(32, 3, activation='relu', padding='same')(u9)
+    c9 = Conv2D(32, 3, activation='relu', padding='same')(c9)
+
+    outputs = Conv2D(1, (1, 1), activation='sigmoid')(c9)
+
+    model = Model(inputs=[inputs], outputs=[outputs])
+    return model
+
+unet_path = "/kaggle/input/notebooks/nikhilpandey360/lung-segmentation-from-chest-x-ray-dataset/cxr_reg_weights.best.hdf5"
+
+unet_model = build_unet(input_size=(256, 256, 1))
+unet_model.load_weights(unet_path)
+
+print("Poids U-Net chargés avec succès")
+
+
+
+
+#### chargement et configuration de model densnet + le prétraitement des données pour la segmentation #### 
+
+
+
+
+from sklearn.utils.class_weight import compute_class_weight
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms
+
+def read_dicom_image_segmented(path, image_size=224):
+    image = read_dicom_gray(path)
+
+    # CLAHE avant segmentation
+    image_clahe = apply_clahe_gray(image)
+
+    # Segmentation U-Net
+    segmented, mask = segment_lungs_unet_keras(
+        image_clahe,
+        unet_model,
+        input_size=256,
+        threshold=0.5
+    )
+
+    # Resize + RGB
+    segmented = cv2.resize(segmented, (image_size, image_size))
+    segmented = cv2.cvtColor(segmented, cv2.COLOR_GRAY2RGB)
+
+    return segmented
+    
+
+class RSNASegmentedDataset(Dataset):
+    def __init__(self, dataframe, augmentation=None):
+        self.dataframe = dataframe.reset_index(drop=True)
+        self.augmentation = augmentation
+
+        self.normalize = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            )
+        ])
+
+    def __len__(self):
+        return len(self.dataframe)
+
+    def __getitem__(self, idx):
+        path = self.dataframe.loc[idx, "path"]
+        label = self.dataframe.loc[idx, "Target"]
+
+        image = read_dicom_image_segmented(path)
+
+        if self.augmentation:
+            image = self.augmentation(image=image)["image"]
+
+        image = self.normalize(image)
+        label = torch.tensor(label, dtype=torch.long)
+
+        return image, label
+
+
+train_seg_dataset = RSNASegmentedDataset(
+    train_df,
+    augmentation=train_augmentation
+)
+
+val_seg_dataset = RSNASegmentedDataset(
+    val_df,
+    augmentation=None
+)
+
+test_seg_dataset = RSNASegmentedDataset(
+    test_df,
+    augmentation=None
+)
+
+train_seg_loader = DataLoader(
+    train_seg_dataset,
+    batch_size=32,
+    shuffle=True,
+    num_workers=0
+)
+
+val_seg_loader = DataLoader(
+    val_seg_dataset,
+    batch_size=32,
+    shuffle=False,
+    num_workers=0
+)
+
+test_seg_loader = DataLoader(
+    test_seg_dataset,
+    batch_size=32,
+    shuffle=False,
+    num_workers=0
+)
+
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#print(device)
+
+learning_rate = 1e-4
+num_epochs = 20
+weight_decay = 1e-4
+dropout_rate = 0.3
+
+densenet_seg = models.densenet121(
+    weights=models.DenseNet121_Weights.IMAGENET1K_V1
+)
+
+for param in densenet_seg.parameters():
+    param.requires_grad = False
+
+num_features = densenet_seg.classifier.in_features
+
+densenet_seg.classifier = nn.Sequential(
+    nn.Linear(num_features, 512),
+    nn.ReLU(),
+    nn.Dropout(dropout_rate),
+    nn.Linear(512, 2)
+)
+
+for param in densenet_seg.features.denseblock4.parameters():
+    param.requires_grad = True
+
+for param in densenet_seg.features.norm5.parameters():
+    param.requires_grad = True
+
+densenet_seg = densenet_seg.to(device)
+
+#print(densenet_seg.classifier)
+
+
+
+class_weights = compute_class_weight(
+    class_weight="balanced",
+    classes=np.unique(train_df["Target"]),
+    y=train_df["Target"]
+)
+
+class_weights = torch.tensor(
+    class_weights,
+    dtype=torch.float
+).to(device)
+
+#print(class_weights)
+
+criterion = nn.CrossEntropyLoss(weight=class_weights)
+
+optimizer = optim.Adam(
+    filter(lambda p: p.requires_grad, densenet_seg.parameters()),
+    lr=learning_rate,
+    weight_decay=weight_decay
+)
+
+class EarlyStopping:
+
+    def __init__(self, patience=5, min_delta=0.001):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.best_loss = None
+        self.early_stop = False
+
+    def __call__(self, val_loss):
+
+        if self.best_loss is None:
+            self.best_loss = val_loss
+
+        elif val_loss > self.best_loss - self.min_delta:
+            self.counter += 1
+
+            if self.counter >= self.patience:
+                self.early_stop = True
+
+        else:
+            self.best_loss = val_loss
+            self.counter = 0
+
+
+early_stopping = EarlyStopping(
+    patience=3,
+    min_delta=0.001
+)
+
+
+
+
+###### Entraînement et sauvegarde du modèle final #####
+
+
+
+from tqdm import tqdm
+
+best_val_loss = float("inf")
+
+train_losses_seg = []
+val_losses_seg = []
+
+for epoch in range(num_epochs):
+
+    densenet_seg.train()
+    running_loss = 0.0
+
+    for images, labels in tqdm(train_seg_loader):
+
+        images = images.to(device)
+        labels = labels.to(device)
+
+        optimizer.zero_grad()
+
+        outputs = densenet_seg(images)
+        loss = criterion(outputs, labels)
+
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+
+    train_loss = running_loss / len(train_seg_loader)
+
+    densenet_seg.eval()
+    running_val_loss = 0.0
+
+    with torch.no_grad():
+
+        for images, labels in val_seg_loader:
+
+            images = images.to(device)
+            labels = labels.to(device)
+
+            outputs = densenet_seg(images)
+            loss = criterion(outputs, labels)
+
+            running_val_loss += loss.item()
+
+    val_loss = running_val_loss / len(val_seg_loader)
+
+    if val_loss < best_val_loss:
+
+        best_val_loss = val_loss
+
+        torch.save(
+            densenet_seg.state_dict(),
+            "/kaggle/working/best_densenet121_segmented.pth"
+        )
+
+        print("Best DenseNet121 segmented model saved")
+
+    train_losses_seg.append(train_loss)
+    val_losses_seg.append(val_loss)
+
+    print(
+        f"Epoch {epoch+1}/{num_epochs} "
+        f"Train Loss: {train_loss:.4f} "
+        f"Val Loss: {val_loss:.4f}"
+    )
+
+    early_stopping(val_loss)
+
+    if early_stopping.early_stop:
+        print("Early stopping")
+        break
+
+
+
+
+
+#### évaluation du model ####
+
+
+
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    confusion_matrix,
+    roc_auc_score
+)
+
+import torch
+import numpy as np
+
+all_labels = []
+all_preds = []
+all_probs = []
+
+densenet_seg.load_state_dict(
+    torch.load("/kaggle/working/best_densenet121_segmented.pth", map_location=device)
+)
+
+densenet_seg.eval()
+
+with torch.no_grad():
+
+    for images, labels in test_seg_loader:
+
+        images = images.to(device)
+        labels = labels.to(device)
+
+        outputs = densenet_seg(images)
+
+        probs = torch.softmax(outputs, dim=1)[:, 1]
+        preds = torch.argmax(outputs, dim=1)
+
+        all_labels.extend(labels.cpu().numpy())
+        all_preds.extend(preds.cpu().numpy())
+        all_probs.extend(probs.cpu().numpy())
+
+accuracy = accuracy_score(all_labels, all_preds)
+precision = precision_score(all_labels, all_preds)
+recall = recall_score(all_labels, all_preds)
+f1 = f1_score(all_labels, all_preds)
+auc = roc_auc_score(all_labels, all_probs)
+cm = confusion_matrix(all_labels, all_preds)
+
+print("Accuracy :", accuracy)
+print("Precision :", precision)
+print("Recall :", recall)
+print("F1-score :", f1)
+print("AUC :", auc)
+
+print("\nMatrice de confusion :")
+print(cm)
+

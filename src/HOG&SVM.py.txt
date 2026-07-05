@@ -1,0 +1,73 @@
+import cv2
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+
+from skimage.feature import hog
+from sklearn.svm import LinearSVC
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
+
+train_sample = train_df.groupby("Target", group_keys=False).apply(
+    lambda x: x.sample(min(len(x), 1500), random_state=42)
+)
+
+val_sample = val_df.groupby("Target", group_keys=False).apply(
+    lambda x: x.sample(min(len(x), 500), random_state=42)
+)
+
+print(train_sample["Target"].value_counts())
+print(val_sample["Target"].value_counts())
+
+def extract_hog_features(dataframe):
+    features = []
+    labels = []
+
+    for _, row in tqdm(dataframe.iterrows(), total=len(dataframe)):
+        path = row["path"]
+        label = row["Target"]
+
+        image = read_dicom_image(path, image_size=224, use_clahe=True)
+
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+
+        hog_feature = hog(
+            gray,
+            orientations=9,
+            pixels_per_cell=(16, 16),
+            cells_per_block=(2, 2),
+            block_norm="L2-Hys",
+            feature_vector=True
+        )
+
+        features.append(hog_feature)
+        labels.append(label)
+
+    return np.array(features), np.array(labels)
+
+
+X_train_hog, y_train_hog = extract_hog_features(train_sample)
+X_val_hog, y_val_hog = extract_hog_features(val_sample)
+
+print(X_train_hog.shape)
+print(y_train_hog.shape)
+print(X_val_hog.shape)
+print(y_val_hog.shape)
+
+svm_model = LinearSVC(
+    class_weight="balanced",
+    max_iter=5000,
+    random_state=42
+)
+
+svm_model.fit(X_train_hog, y_train_hog)
+
+y_pred = svm_model.predict(X_val_hog)
+
+print("Accuracy :", accuracy_score(y_val_hog, y_pred))
+print("Precision :", precision_score(y_val_hog, y_pred))
+print("Recall :", recall_score(y_val_hog, y_pred))
+print("F1-score :", f1_score(y_val_hog, y_pred))
+
+
+print("\nMatrice de confusion :")
+print(confusion_matrix(y_val_hog, y_pred))
